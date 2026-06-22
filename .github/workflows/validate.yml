@@ -1,0 +1,27 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check
+        run: |
+          node --check scripts/cost.mjs
+          node --check scripts/test.mjs
+          node --check scripts/check-manifests.mjs
+      - name: Validate manifests
+        run: node scripts/check-manifests.mjs
+      - name: Unit test
+        run: node scripts/test.mjs

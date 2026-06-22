@@ -1,0 +1,7 @@
+{"type":"system","subtype":"info","timestamp":"2026-06-01T09:00:00.000Z","cwd":"/home/dev/alpha","gitBranch":"main"}
+{"type":"user","uuid":"u-user-1","timestamp":"2026-06-01T09:00:01.000Z","cwd":"/home/dev/alpha","gitBranch":"main","message":{"role":"user","content":"hi"}}
+{"type":"assistant","uuid":"a-1","requestId":"req_A","timestamp":"2026-06-01T10:00:00.000Z","cwd":"/home/dev/alpha","gitBranch":"main","message":{"id":"msg_A","model":"claude-opus-4-6","usage":{"input_tokens":1000000,"output_tokens":200000,"cache_read_input_tokens":0}}}
+{"type":"assistant","uuid":"a-1-dup","requestId":"req_A","timestamp":"2026-06-01T10:00:05.000Z","cwd":"/home/dev/alpha","gitBranch":"main","message":{"id":"msg_A","model":"claude-opus-4-6","usage":{"input_tokens":1000000,"output_tokens":200000,"cache_read_input_tokens":0}}}
+{"type":"assistant","uuid":"a-synth","requestId":"req_S","timestamp":"2026-06-01T10:01:00.000Z","cwd":"/home/dev/alpha","gitBranch":"main","message":{"id":"msg_S","model":"<synthetic>","usage":{"input_tokens":99999999,"output_tokens":99999999}}}
+{"this is not valid json at all
+{"type":"assistant","uuid":"a-2","requestId":"req_C","timestamp":"2026-06-01T11:00:00.000Z","cwd":"/home/dev/alpha","gitBranch":"feature-x","message":{"id":"msg_C","model":"claude-sonnet-4-5-20250929","usage":{"input_tokens":500000,"output_tokens":100000,"cache_read_input_tokens":1000000,"cache_creation":{"ephemeral_5m_input_tokens":200000,"ephemeral_1h_input_tokens":0}}}}

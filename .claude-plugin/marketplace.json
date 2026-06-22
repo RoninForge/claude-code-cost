@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "roninforge",
+  "description": "RoninForge developer tools for Claude Code. Local-first usage guards and spend monitors that read the logs Claude Code already writes. Never touch API traffic.",
+  "owner": {
+    "name": "RoninForge"
+  },
+  "plugins": [
+    {
+      "name": "claude-code-cost",
+      "source": "./",
+      "description": "See your Claude Code spend in USD per project and per git branch, computed locally from the session logs Claude Code already writes. Never touches API traffic. Zero key, zero prompts, zero latency.",
+      "license": "MIT",
+      "keywords": [
+        "cost",
+        "spend",
+        "budget",
+        "usage",
+        "tokens",
+        "claude-code",
+        "anthropic",
+        "price"
+      ]
+    }
+  ]
+}
