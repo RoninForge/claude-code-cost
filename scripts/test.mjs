@@ -149,6 +149,103 @@ check(
   missing.stdout.trim()
 );
 
+// --- by-* modes: every fixture event is on 2026-06-01, so with --asof 2026-06-03
+// (same week + month, later day) the dated views collapse to a single bucket. ---
+const cAlphaMain = cents({ input: 1000000, output: 200000 }, "claude-opus-4-6");
+const cAlphaFeat = cents(
+  { input: 500000, output: 100000, cache_read: 1000000, cache_write_5m: 200000 },
+  "claude-sonnet-4-5-20250929"
+);
+const cBetaMain = cents({ cache_write_5m: 400000 }, "claude-haiku-4-5-20251001");
+const expPeriodTotal = toUsd(cAlphaMain + cAlphaFeat + cBetaMain);
+const expAlphaProject = toUsd(cAlphaMain + cAlphaFeat);
+const expBetaProject = toUsd(cBetaMain);
+
+function runMode(mode, extra = []) {
+  const r = spawnSync(
+    process.execPath,
+    [COST, "--mode", mode, "--self", "--json", "--asof", "2026-06-03", "--projects-dir", FIXTURES, ...extra],
+    { encoding: "utf8" }
+  );
+  eq(`${mode} exits 0`, r.status, 0);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(r.stdout);
+  } catch (e) {
+    check(`${mode} stdout is JSON`, false, e.message + " :: " + r.stdout);
+  }
+  return parsed;
+}
+
+// by-day: one dated row for 2026-06-01 totalling every project's spend.
+const byDay = runMode("by-day");
+if (byDay) {
+  eq("by-day row count", byDay.length, 1);
+  eq("by-day period label is the event date", byDay[0]?.period, "2026-06-01");
+  eq("by-day spend is the full total", byDay[0]?.spend, expPeriodTotal);
+}
+
+// by-week: one row labelled with the Monday of the event's week.
+const byWeek = runMode("by-week");
+if (byWeek) {
+  eq("by-week row count", byWeek.length, 1);
+  eq("by-week period label is the Monday (2026-06-01)", byWeek[0]?.period, "2026-06-01");
+  eq("by-week spend is the full total", byWeek[0]?.spend, expPeriodTotal);
+}
+
+// by-month: one row labelled YYYY-MM.
+const byMonth = runMode("by-month");
+if (byMonth) {
+  eq("by-month row count", byMonth.length, 1);
+  eq("by-month period label is YYYY-MM", byMonth[0]?.period, "2026-06");
+  eq("by-month spend is the full total", byMonth[0]?.spend, expPeriodTotal);
+}
+
+// by-day filter scopes the dated total to one project/branch.
+const byDayBeta = runMode("by-day", ["beta"]);
+if (byDayBeta) {
+  eq("by-day filter beta row count", byDayBeta.length, 1);
+  eq("by-day filter beta spend", byDayBeta[0]?.spend, expBetaProject);
+}
+
+// by-project: branches collapse per project, ranked by month spend, with lastActive.
+const byProject = runMode("by-project");
+if (byProject) {
+  eq("by-project row count", byProject.length, 2);
+  const pj = new Map(byProject.map((r) => [r.project, r]));
+  const a = pj.get("alpha");
+  const b = pj.get("beta");
+  check("by-project has alpha", !!a);
+  check("by-project has beta", !!b);
+  if (a) {
+    eq("by-project alpha month (branches merged)", a.month, expAlphaProject);
+    eq("by-project alpha lastActive", a.lastActive, "2026-06-01");
+  }
+  if (b) eq("by-project beta month", b.month, expBetaProject);
+  // alpha outspends beta, so it must rank first.
+  eq("by-project ranked by month desc", byProject[0]?.project, "alpha");
+}
+
+// by-project filter keeps only matching projects.
+const byProjectAlpha = runMode("by-project", ["alpha"]);
+if (byProjectAlpha) {
+  eq("by-project filter alpha row count", byProjectAlpha.length, 1);
+  check("by-project filter alpha is alpha", byProjectAlpha[0]?.project === "alpha");
+}
+
+// An unknown --mode is a hard error (exit 2), not a silent fallback.
+const badMode = spawnSync(
+  process.execPath,
+  [COST, "--mode", "by-quarter", "--self", "--projects-dir", FIXTURES],
+  { encoding: "utf8" }
+);
+eq("unknown mode exits 2", badMode.status, 2);
+check(
+  "unknown mode names the valid modes",
+  badMode.stderr.includes("by-day") && badMode.stderr.includes("by-project"),
+  badMode.stderr.trim()
+);
+
 console.log("");
 if (failures > 0) {
   console.error(`${failures} check(s) failed.`);
