@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "claude-code-cost",
   "displayName": "Claude Code Cost",
-  "version": "1.0.0",
-  "description": "See your Claude Code spend in USD per project and per git branch, computed locally by reading the session logs Claude Code already writes to ~/.claude/projects. Never touches API traffic. Zero key, zero prompts, zero latency.",
+  "version": "1.1.0",
+  "description": "See your Claude Code spend in USD per project, per git branch, and over time (by day, week, month), computed locally by reading the session logs Claude Code already writes to ~/.claude/projects. Never touches API traffic. Zero key, zero prompts, zero latency.",
   "author": {
     "name": "RoninForge",
     "url": "https://roninforge.org"

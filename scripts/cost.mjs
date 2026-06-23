@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// claude-code-cost: show Claude Code spend (USD) per project and per git branch.
+// claude-code-cost: show Claude Code spend (USD) per project, branch, and over time.
 //
 // It reads only the transcript JSONL that Claude Code already writes locally to
 // ~/.claude/projects/**/*.jsonl. It never touches API traffic. Zero key, zero
@@ -7,10 +7,19 @@
 //
 // Pricing comes from the vendored ai-price-index lib (no runtime network).
 //
+// Modes (--mode, default "report"):
+//   report      per (project, branch) with TODAY / WEEK / MONTH columns.
+//   by-day      total spend per calendar day (dated), most recent first.
+//   by-week     total spend per Monday-based week (dated), most recent first.
+//   by-month    total spend per calendar month (dated), most recent first.
+//   by-project  per project (branches collapsed) with TODAY/WEEK/MONTH + last active.
+//
 // Design:
-//   - By default, if `budgetclaw` is on PATH, run `budgetclaw status` (richer:
+//   - report mode: if `budgetclaw` is on PATH, run `budgetclaw status` (richer:
 //     persistent DB + budgets) and print its output. On any failure, or with
 //     --self, fall back to the self-contained reader below.
+//   - Every by-* mode reads the raw JSONL directly (it is the only source with
+//     per-event dates; `budgetclaw status` only emits the pre-rolled snapshot).
 //   - The self-contained reader parses the raw JSONL = ground truth.
 
 import { spawnSync } from "node:child_process";
@@ -22,17 +31,33 @@ import { join, basename, isAbsolute, resolve } from "node:path";
 import * as price from "./vendor/ai-price-index/index.js";
 
 // ---------------------------------------------------------------------------
+// Modes
+// ---------------------------------------------------------------------------
+
+const MODES = new Set(["report", "by-day", "by-week", "by-month", "by-project"]);
+
+// How far back each by-* view looks. Generous defaults; only buckets with spend
+// are shown, so an idle range simply yields fewer rows.
+const BY_DAY_LOOKBACK_DAYS = 30;
+const BY_WEEK_LOOKBACK_WEEKS = 12;
+const BY_MONTH_LOOKBACK_MONTHS = 12;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
   const opts = {
+    mode: "report",
     self: false,
     json: false,
     help: false,
     projectsDir: null,
     asof: null, // YYYY-MM-DD; pins period boundaries (testing/determinism)
     filter: null,
+    badMode: null,
   };
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -40,6 +65,8 @@ function parseArgs(argv) {
     if (a === "--self") opts.self = true;
     else if (a === "--json") opts.json = true;
     else if (a === "--help" || a === "-h") opts.help = true;
+    else if (a === "--mode") opts.mode = argv[++i] ?? "report";
+    else if (a.startsWith("--mode=")) opts.mode = a.slice("--mode=".length);
     else if (a === "--projects-dir") opts.projectsDir = argv[++i] ?? null;
     else if (a.startsWith("--projects-dir=")) opts.projectsDir = a.slice("--projects-dir=".length);
     else if (a === "--asof") opts.asof = argv[++i] ?? null;
@@ -51,10 +78,14 @@ function parseArgs(argv) {
   }
   // First non-flag arg is the substring filter.
   if (positionals.length > 0) opts.filter = positionals[0];
+  if (!MODES.has(opts.mode)) {
+    opts.badMode = opts.mode;
+    opts.mode = "report";
+  }
   return opts;
 }
 
-const USAGE = `claude-code-cost  -  Claude Code spend per project and per git branch
+const USAGE = `claude-code-cost  -  Claude Code spend per project, branch, and over time
 
 Reads the local session logs Claude Code writes to ~/.claude/projects/**/*.jsonl.
 Never touches API traffic. Zero key, zero prompts, zero latency.
@@ -67,6 +98,12 @@ Arguments:
                          or BRANCH contains it (TOTAL + header are preserved).
 
 Flags:
+  --mode <name>          report (default) | by-day | by-week | by-month | by-project
+                           report      per project + branch, TODAY/WEEK/MONTH
+                           by-day      spend per day, dated, most recent first
+                           by-week     spend per Monday-based week, dated
+                           by-month    spend per calendar month, dated
+                           by-project  per project (branches merged) + last active
   --self                 Force the self-contained JSONL reader (skip budgetclaw).
   --json                 Emit a JSON array instead of the table.
   --projects-dir <path>  Scan root override (default: ~/.claude/projects).
@@ -74,8 +111,9 @@ Flags:
   --asof <YYYY-MM-DD>    Pin "today" for period boundaries (deterministic).
   -h, --help             Show this help.
 
-By default, if budgetclaw is installed it is used (richer: persistent DB +
-budget caps). Pass --self to always use the built-in reader.`;
+In report mode, if budgetclaw is installed it is used (richer: persistent DB +
+budget caps). The by-* modes always read the raw JSONL directly because that is
+the only source with per-event dates. Pass --self to force the built-in reader.`;
 
 // ---------------------------------------------------------------------------
 // Period boundaries (UTC, matching BudgetClaw defaults)
@@ -99,7 +137,7 @@ function periodBounds(now) {
   // Monday-based week: JS getUTCDay() has Sun=0..Sat=6; offset to Monday.
   const offset = (now.getUTCDay() + 6) % 7;
   const weekStart = Date.UTC(y, m, d - offset, 0, 0, 0, 0);
-  const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+  const weekEnd = weekStart + 7 * DAY_MS;
 
   const monthStart = Date.UTC(y, m, 1, 0, 0, 0, 0);
   const monthEnd = Date.UTC(y, m + 1, 1, 0, 0, 0, 0);
@@ -110,6 +148,17 @@ function periodBounds(now) {
     month: [monthStart, monthEnd],
   };
 }
+
+// Bucket-key helpers (all UTC). ISO strings sort lexically == chronologically.
+const dayKey = (ts) => new Date(ts).toISOString().slice(0, 10); // YYYY-MM-DD
+const monthKey = (ts) => new Date(ts).toISOString().slice(0, 7); // YYYY-MM
+
+function weekStartMs(ts) {
+  const d = new Date(ts);
+  const offset = (d.getUTCDay() + 6) % 7;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - offset, 0, 0, 0, 0);
+}
+const weekKey = (ts) => dayKey(weekStartMs(ts)); // Monday's date
 
 // ---------------------------------------------------------------------------
 // JSONL parsing (canonical schema, mirrors BudgetClaw's Go parser)
@@ -219,7 +268,10 @@ async function readLines(file, onLine) {
   for await (const line of rl) onLine(line);
 }
 
-async function selfContained(opts) {
+// Read every JSONL once, dedup, and price each unique assistant response at its
+// own UTC date. Returns the flat priced-event list that every mode aggregates
+// from, plus the diagnostics (malformed / unpriced) the renderers surface.
+async function collectEvents(opts) {
   const root =
     opts.projectsDir ||
     process.env.CC_COST_PROJECTS_DIR ||
@@ -230,28 +282,11 @@ async function selfContained(opts) {
     return { missingPath: rootAbs };
   }
 
-  const now = opts.asof ? new Date(opts.asof + "T12:00:00.000Z") : new Date();
-  const bounds = periodBounds(now);
-
-  // Aggregate cents per (project, branch) per period.
-  // key = project + " " + branch
-  const rows = new Map();
-  const ensure = (project, branch) => {
-    const k = project + " " + branch;
-    let v = rows.get(k);
-    if (!v) {
-      v = { project, branch, day: 0, week: 0, month: 0 };
-      rows.set(k, v);
-    }
-    return v;
-  };
-
+  const events = []; // { ts, project, branch, model, cents, modelKnown }
   const seen = new Set(); // dedup keys
   let malformed = 0;
   const unpricedModels = new Map(); // model -> count
   let unpricedCount = 0;
-
-  const inWindow = (ts, [start, end]) => ts >= start && ts < end;
 
   for (const file of walkJsonl(rootAbs)) {
     // eslint-disable-next-line no-await-in-loop
@@ -281,21 +316,19 @@ async function selfContained(opts) {
         // Do not silently drop: surfaced after rendering. cents is 0 here.
       }
 
-      const row = ensure(ev.project, ev.branch);
-      if (inWindow(ev.ts, bounds.day)) row.day += cents;
-      if (inWindow(ev.ts, bounds.week)) row.week += cents;
-      if (inWindow(ev.ts, bounds.month)) row.month += cents;
+      events.push({
+        ts: ev.ts,
+        project: ev.project,
+        branch: ev.branch,
+        model: ev.model,
+        cents,
+        modelKnown,
+      });
     });
   }
 
-  // Drop rows with zero spend in all three periods (matches budgetclaw, which
-  // only stores periods with activity). Sort by project then branch.
-  const list = [...rows.values()]
-    .filter((r) => r.day > 0 || r.week > 0 || r.month > 0)
-    .sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : a.branch < b.branch ? -1 : a.branch > b.branch ? 1 : 0));
-
   return {
-    rows: list,
+    events,
     malformed,
     unpricedModels,
     unpricedCount,
@@ -303,11 +336,130 @@ async function selfContained(opts) {
   };
 }
 
+function eventMatchesFilter(ev, filter, projectOnly) {
+  if (!filter) return true;
+  const f = filter.toLowerCase();
+  if (projectOnly) return ev.project.toLowerCase().includes(f);
+  return ev.project.toLowerCase().includes(f) || ev.branch.toLowerCase().includes(f);
+}
+
+// report mode: aggregate cents per (project, branch) into TODAY / WEEK / MONTH.
+function aggregateReport(events, now) {
+  const bounds = periodBounds(now);
+  const inWindow = (ts, [start, end]) => ts >= start && ts < end;
+
+  const rows = new Map();
+  const ensure = (project, branch) => {
+    const k = project + " " + branch;
+    let v = rows.get(k);
+    if (!v) {
+      v = { project, branch, day: 0, week: 0, month: 0 };
+      rows.set(k, v);
+    }
+    return v;
+  };
+
+  for (const ev of events) {
+    const row = ensure(ev.project, ev.branch);
+    if (inWindow(ev.ts, bounds.day)) row.day += ev.cents;
+    if (inWindow(ev.ts, bounds.week)) row.week += ev.cents;
+    if (inWindow(ev.ts, bounds.month)) row.month += ev.cents;
+  }
+
+  // Drop rows with zero spend in all three periods (matches budgetclaw, which
+  // only stores periods with activity). Sort by project then branch.
+  return [...rows.values()]
+    .filter((r) => r.day > 0 || r.week > 0 || r.month > 0)
+    .sort((a, b) =>
+      a.project < b.project ? -1 : a.project > b.project ? 1 : a.branch < b.branch ? -1 : a.branch > b.branch ? 1 : 0
+    );
+}
+
+// by-day / by-week / by-month: total cents per time bucket within the lookback.
+// Returns rows [{ label, cents }] sorted most-recent-first.
+function aggregateByPeriod(events, now, granularity) {
+  const bounds = periodBounds(now);
+  const upper = bounds.day[1]; // end of "today"; ignore future-dated events
+
+  let cutoff;
+  let keyOf;
+  if (granularity === "day") {
+    cutoff = bounds.day[0] - (BY_DAY_LOOKBACK_DAYS - 1) * DAY_MS;
+    keyOf = dayKey;
+  } else if (granularity === "week") {
+    cutoff = bounds.week[0] - (BY_WEEK_LOOKBACK_WEEKS - 1) * 7 * DAY_MS;
+    keyOf = weekKey;
+  } else {
+    // month
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth();
+    cutoff = Date.UTC(y, m - (BY_MONTH_LOOKBACK_MONTHS - 1), 1, 0, 0, 0, 0);
+    keyOf = monthKey;
+  }
+
+  const buckets = new Map(); // label -> cents
+  for (const ev of events) {
+    if (ev.ts < cutoff || ev.ts >= upper) continue;
+    const label = keyOf(ev.ts);
+    buckets.set(label, (buckets.get(label) || 0) + ev.cents);
+  }
+
+  return [...buckets.entries()]
+    .map(([label, cents]) => ({ label, cents }))
+    .filter((r) => r.cents > 0)
+    .sort((a, b) => (a.label < b.label ? 1 : a.label > b.label ? -1 : 0)); // desc
+}
+
+// by-project: collapse branches; TODAY / WEEK / MONTH plus last-active date.
+function aggregateByProject(events, now) {
+  const bounds = periodBounds(now);
+  const inWindow = (ts, [start, end]) => ts >= start && ts < end;
+
+  const rows = new Map();
+  const ensure = (project) => {
+    let v = rows.get(project);
+    if (!v) {
+      v = { project, day: 0, week: 0, month: 0, lastTs: 0 };
+      rows.set(project, v);
+    }
+    return v;
+  };
+
+  for (const ev of events) {
+    const row = ensure(ev.project);
+    if (inWindow(ev.ts, bounds.day)) row.day += ev.cents;
+    if (inWindow(ev.ts, bounds.week)) row.week += ev.cents;
+    if (inWindow(ev.ts, bounds.month)) row.month += ev.cents;
+    if (ev.ts > row.lastTs) row.lastTs = ev.ts;
+  }
+
+  return [...rows.values()]
+    .filter((r) => r.day > 0 || r.week > 0 || r.month > 0)
+    .sort((a, b) => b.month - a.month || b.week - a.week || b.day - a.day ||
+      (a.project < b.project ? -1 : a.project > b.project ? 1 : 0));
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
 
 const dollars = (cents) => "$" + (cents / 100).toFixed(2);
+const EMPTY = "No Claude Code spend tracked yet.";
+
+// Generic fixed-width grid: header + body rows + optional total row. Each cell
+// is left-padded to its column's max width with a 2-space gutter (matches the
+// column layout BudgetClaw's Go tabwriter produces for plain reading).
+function renderGrid(header, body, total) {
+  const all = [header, ...body, ...(total ? [total] : [])];
+  const widths = header.map((_, c) => Math.max(...all.map((row) => (row[c] ?? "").length)));
+  const GUTTER = "  ";
+  const fmt = (row) =>
+    row
+      .map((cell, c) => (cell ?? "").padEnd(c === row.length - 1 ? 0 : widths[c]))
+      .join(GUTTER)
+      .replace(/\s+$/, "");
+  return all.map(fmt).join("\n");
+}
 
 function filterRows(rows, filter) {
   if (!filter) return rows;
@@ -317,20 +469,12 @@ function filterRows(rows, filter) {
   );
 }
 
-// Render the same column layout BudgetClaw uses: PROJECT BRANCH TODAY WEEK MONTH
-// with at least a 2-space gutter (Go's tabwriter uses padding 3; we compute
-// max widths + a 2-space gutter, which lines up identically for plain reading).
+// report: PROJECT BRANCH TODAY WEEK MONTH
 function renderTable(rows) {
-  if (rows.length === 0) return "No Claude Code spend tracked yet.";
+  if (rows.length === 0) return EMPTY;
 
   const header = ["PROJECT", "BRANCH", "TODAY", "WEEK", "MONTH"];
-  const body = rows.map((r) => [
-    r.project,
-    r.branch,
-    dollars(r.day),
-    dollars(r.week),
-    dollars(r.month),
-  ]);
+  const body = rows.map((r) => [r.project, r.branch, dollars(r.day), dollars(r.week), dollars(r.month)]);
 
   let total = null;
   if (rows.length > 1) {
@@ -339,14 +483,37 @@ function renderTable(rows) {
     const sumM = rows.reduce((s, r) => s + r.month, 0);
     total = ["TOTAL", "", dollars(sumD), dollars(sumW), dollars(sumM)];
   }
+  return renderGrid(header, body, total);
+}
 
-  const all = [header, ...body, ...(total ? [total] : [])];
-  const widths = header.map((_, c) => Math.max(...all.map((row) => row[c].length)));
-  const GUTTER = "  ";
-  const fmt = (row) =>
-    row.map((cell, c) => cell.padEnd(c === row.length - 1 ? 0 : widths[c])).join(GUTTER).replace(/\s+$/, "");
+// by-day / by-week / by-month: LABEL SPEND
+function renderPeriodTable(rows, labelHeader) {
+  if (rows.length === 0) return EMPTY;
+  const header = [labelHeader, "SPEND"];
+  const body = rows.map((r) => [r.label, dollars(r.cents)]);
+  const total = rows.length > 1 ? ["TOTAL", dollars(rows.reduce((s, r) => s + r.cents, 0))] : null;
+  return renderGrid(header, body, total);
+}
 
-  return all.map(fmt).join("\n");
+// by-project: PROJECT TODAY WEEK MONTH LAST
+function renderProjectTable(rows) {
+  if (rows.length === 0) return EMPTY;
+  const header = ["PROJECT", "TODAY", "WEEK", "MONTH", "LAST"];
+  const body = rows.map((r) => [
+    r.project,
+    dollars(r.day),
+    dollars(r.week),
+    dollars(r.month),
+    r.lastTs ? dayKey(r.lastTs) : "-",
+  ]);
+  let total = null;
+  if (rows.length > 1) {
+    const sumD = rows.reduce((s, r) => s + r.day, 0);
+    const sumW = rows.reduce((s, r) => s + r.week, 0);
+    const sumM = rows.reduce((s, r) => s + r.month, 0);
+    total = ["TOTAL", dollars(sumD), dollars(sumW), dollars(sumM), ""];
+  }
+  return renderGrid(header, body, total);
 }
 
 function rowsToJson(rows) {
@@ -356,6 +523,20 @@ function rowsToJson(rows) {
     today: +(r.day / 100).toFixed(2),
     week: +(r.week / 100).toFixed(2),
     month: +(r.month / 100).toFixed(2),
+  }));
+}
+
+function periodToJson(rows) {
+  return rows.map((r) => ({ period: r.label, spend: +(r.cents / 100).toFixed(2) }));
+}
+
+function projectToJson(rows) {
+  return rows.map((r) => ({
+    project: r.project,
+    today: +(r.day / 100).toFixed(2),
+    week: +(r.week / 100).toFixed(2),
+    month: +(r.month / 100).toFixed(2),
+    lastActive: r.lastTs ? dayKey(r.lastTs) : null,
   }));
 }
 
@@ -369,7 +550,7 @@ function renderUnpricedNote(unpricedModels, unpricedCount) {
 }
 
 // ---------------------------------------------------------------------------
-// budgetclaw passthrough
+// budgetclaw passthrough (report mode only)
 // ---------------------------------------------------------------------------
 
 function hasBudgetclaw() {
@@ -458,6 +639,16 @@ function filterBudgetclawOutput(text, filter) {
 // Main
 // ---------------------------------------------------------------------------
 
+function writeMeta(result) {
+  const meta = {
+    dataModified: result.dataModified,
+    unpricedCount: result.unpricedCount,
+    unpricedModels: [...result.unpricedModels.keys()].sort(),
+    malformedLines: result.malformed,
+  };
+  process.stderr.write("_meta " + JSON.stringify(meta) + "\n");
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -466,10 +657,23 @@ async function main() {
     return 0;
   }
 
-  // Try budgetclaw unless --self, --json, or a custom projects dir forces the
-  // built-in reader. (--json and --projects-dir imply the self-contained path,
-  // because budgetclaw status emits neither JSON nor a scan-root override.)
-  if (!opts.self && !opts.json && !opts.projectsDir && hasBudgetclaw()) {
+  if (opts.badMode) {
+    process.stderr.write(
+      `claude-code-cost: unknown --mode '${opts.badMode}'. ` +
+        `Valid: report, by-day, by-week, by-month, by-project.\n`
+    );
+    return 2;
+  }
+
+  // report mode: try budgetclaw first (richer) unless the built-in reader is
+  // forced. by-* modes always read JSONL (budgetclaw status has no per-date data).
+  if (
+    opts.mode === "report" &&
+    !opts.self &&
+    !opts.json &&
+    !opts.projectsDir &&
+    hasBudgetclaw()
+  ) {
     const out = runBudgetclaw();
     if (out !== null) {
       process.stdout.write(filterBudgetclawOutput(out, opts.filter));
@@ -479,7 +683,7 @@ async function main() {
     // budgetclaw failed; fall through to the self-contained reader.
   }
 
-  const result = await selfContained(opts);
+  const result = await collectEvents(opts);
 
   if (result.missingPath) {
     if (opts.json) {
@@ -490,25 +694,57 @@ async function main() {
     return 0;
   }
 
-  const rows = filterRows(result.rows, opts.filter);
+  const now = opts.asof ? new Date(opts.asof + "T12:00:00.000Z") : new Date();
+
+  // ---- by-day / by-week / by-month ----
+  if (opts.mode === "by-day" || opts.mode === "by-week" || opts.mode === "by-month") {
+    const granularity = opts.mode.slice("by-".length); // day | week | month
+    const matched = result.events.filter((ev) => eventMatchesFilter(ev, opts.filter, false));
+    const rows = aggregateByPeriod(matched, now, granularity);
+
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(periodToJson(rows)) + "\n");
+      writeMeta(result);
+      return 0;
+    }
+
+    const labelHeader = granularity === "day" ? "DATE" : granularity === "week" ? "WEEK OF" : "MONTH";
+    process.stdout.write(renderPeriodTable(rows, labelHeader) + "\n");
+    const note = renderUnpricedNote(result.unpricedModels, result.unpricedCount);
+    if (note) process.stdout.write("\n" + note + "\n");
+    return 0;
+  }
+
+  // ---- by-project ----
+  if (opts.mode === "by-project") {
+    const matched = result.events.filter((ev) => eventMatchesFilter(ev, opts.filter, true));
+    const rows = aggregateByProject(matched, now);
+
+    if (opts.json) {
+      process.stdout.write(JSON.stringify(projectToJson(rows)) + "\n");
+      writeMeta(result);
+      return 0;
+    }
+
+    process.stdout.write(renderProjectTable(rows) + "\n");
+    const note = renderUnpricedNote(result.unpricedModels, result.unpricedCount);
+    if (note) process.stdout.write("\n" + note + "\n");
+    return 0;
+  }
+
+  // ---- report (default) ----
+  const reportRows = filterRows(aggregateReport(result.events, now), opts.filter);
 
   if (opts.json) {
     // stdout stays a pure JSON array of {project, branch, today, week, month}.
     // _meta (dataModified + unpriced/malformed info) goes to stderr so stdout is
     // safe to pipe into `jq` or JSON.parse without stripping anything.
-    const payload = rowsToJson(rows);
-    process.stdout.write(JSON.stringify(payload) + "\n");
-    const meta = {
-      dataModified: result.dataModified,
-      unpricedCount: result.unpricedCount,
-      unpricedModels: [...result.unpricedModels.keys()].sort(),
-      malformedLines: result.malformed,
-    };
-    process.stderr.write("_meta " + JSON.stringify(meta) + "\n");
+    process.stdout.write(JSON.stringify(rowsToJson(reportRows)) + "\n");
+    writeMeta(result);
     return 0;
   }
 
-  process.stdout.write(renderTable(rows) + "\n");
+  process.stdout.write(renderTable(reportRows) + "\n");
   const note = renderUnpricedNote(result.unpricedModels, result.unpricedCount);
   if (note) process.stdout.write("\n" + note + "\n");
   return 0;
