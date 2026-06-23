@@ -1,0 +1,7 @@
+{
+  "name": "ai-price-index-vendored",
+  "version": "1.0.3",
+  "private": true,
+  "type": "module",
+  "comment": "Vendored copy of ai-price-index lib/. This package.json exists only so the .js files here load as ES modules on all Node versions (the upstream package sets type:module at its root). Keep it when refreshing the vendored files. See VENDORED.md."
+}
