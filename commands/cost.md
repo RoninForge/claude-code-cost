@@ -1,6 +1,6 @@
 ---
 description: Show your Claude Code spend in USD per project and per git branch, computed locally from the session logs Claude Code already writes. Never touches API traffic; zero key, zero prompts, zero latency.
-argument-hint: [filter] [--self] [--json]
+argument-hint: "[filter] [--self] [--json]"
 allowed-tools: Bash(node:*), Bash(budgetclaw:*)
 ---
 
