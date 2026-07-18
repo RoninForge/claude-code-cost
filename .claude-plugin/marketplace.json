@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "roninforge",
-  "description": "RoninForge developer tools for Claude Code. Local-first usage guards and spend monitors that read the logs Claude Code already writes. Never touch API traffic.",
+  "description": "RoninForge developer tools for Claude Code. Local-first usage guards and spend monitors that read the logs Claude Code already writes, plus Goei, the hosted team cost dashboard they feed. Never touch API traffic.",
   "owner": {
     "name": "RoninForge"
   },
