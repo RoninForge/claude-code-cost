@@ -1,0 +1,9 @@
+claude-code-cost
+Copyright (c) 2026 RoninForge
+
+This product's source code is licensed under the MIT License (see LICENSE).
+
+It additionally bundles pricing data under scripts/vendor/ai-price-index/,
+derived from the ai-price-index dataset and licensed CC BY 4.0
+(attribution: RoninForge, https://roninforge.org).
+See scripts/vendor/ai-price-index/VENDORED.md for details.

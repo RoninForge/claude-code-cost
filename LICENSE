@@ -19,7 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-The bundled pricing data under scripts/vendor/ai-price-index/ is derived from
-the ai-price-index dataset and is licensed CC BY 4.0 (attribution: RoninForge,
-https://roninforge.org). See scripts/vendor/ai-price-index/VENDORED.md.
