@@ -4,6 +4,8 @@ See your Claude Code spend in USD, per project, per git branch, and over time, w
 
 `/claude-code-cost:report` reads the session logs Claude Code already writes to `~/.claude/projects/**/*.jsonl`, prices every assistant response with a dated, point-in-time price index, and prints a per-project, per-branch table. It never touches API traffic. Zero key, zero prompts, zero latency.
 
+Prefer the terminal, or want a team rollup? [`npx goei-sync`](https://github.com/RoninForge/goei-sync) prints the same spend-by-branch breakdown from a shell with no plugin install, and can sync it to a shared Goei dashboard.
+
 ```
 PROJECT     BRANCH    TODAY   WEEK    MONTH
 my-app      main      $6.04   $6.04   $204.58
