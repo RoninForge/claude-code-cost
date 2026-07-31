@@ -4,7 +4,7 @@ See your Claude Code spend in USD, per project, per git branch, and over time, w
 
 `/claude-code-cost:report` reads the session logs Claude Code already writes to `~/.claude/projects/**/*.jsonl`, prices every assistant response with a dated, point-in-time price index, and prints a per-project, per-branch table. It never touches API traffic. Zero key, zero prompts, zero latency.
 
-Prefer the terminal, or want a team rollup? [`npx goei-sync`](https://github.com/RoninForge/goei-sync) prints the same spend-by-branch breakdown from a shell with no plugin install, and can sync it to a shared Goei dashboard.
+Prefer the terminal, or want a team rollup? [`npx goei-sync`](https://roninforge.org/goei/) prints the same spend-by-branch breakdown from a shell with no plugin install, and can sync it to a shared Goei dashboard.
 
 ```
 PROJECT     BRANCH    TODAY   WEEK    MONTH
@@ -26,11 +26,9 @@ DATE        SPEND
 TOTAL       $21.67
 ```
 
-## Why
+Pricing is point-in-time: each response is valued at the rate that was in effect on the day it ran, using the bundled [ai-price-index](https://www.npmjs.com/package/ai-price-index) dataset. No network call is made at runtime. Models the index does not yet know are surfaced as a note rather than silently counted as zero.
 
-Claude Code shows you a running session cost, but not how much a given project or branch has cost you today, this week, or this month. This plugin answers that question from data already on your disk. It is a usage guard, not a proxy: it parses the local JSONL transcripts, it does not sit in front of the API, store keys, or add latency.
-
-Pricing is point-in-time: each response is valued at the rate that was in effect on the day it ran, using the bundled [ai-price-index](https://www.npmjs.com/package/ai-price-index) dataset (first-party-sourced and dated). No network call is made at runtime. Models the index does not yet know are surfaced as a note rather than silently counted as zero.
+Why it exists, how the numbers are computed, and what it deliberately will not do: **<https://roninforge.org/claude-code-cost/>**
 
 ## Install
 
@@ -75,13 +73,11 @@ Flags (all commands): `--json` for machine-readable output, `--self` to force th
 
 ## Optional: BudgetClaw integration
 
-If [BudgetClaw](https://roninforge.org/budgetclaw) is installed, `/claude-code-cost:report` uses it automatically for a richer read backed by BudgetClaw's persistent database and budget caps. If it is not installed, the bundled self-contained reader is used instead. Either way the numbers come from your local logs. Pass `--self` to always use the built-in reader. The dated views (`by-day`, `by-week`, `by-month`, `by-project`) always read the raw logs directly, because `budgetclaw status` only emits the pre-rolled today/week/month snapshot with no per-date data.
+If [BudgetClaw](https://roninforge.org/budgetclaw/) is installed, `/claude-code-cost:report` uses it automatically for a richer read backed by BudgetClaw's persistent database and budget caps. If it is not installed, the bundled self-contained reader is used instead. Either way the numbers come from your local logs. Pass `--self` to always use the built-in reader. The dated views (`by-day`, `by-week`, `by-month`, `by-project`) always read the raw logs directly, because `budgetclaw status` only emits the pre-rolled today/week/month snapshot with no per-date data.
 
 ## Privacy and trust
 
-- No API keys are read or stored.
-- No prompts, completions, or file contents leave your machine.
-- Nothing is sent anywhere. The plugin reads local files and prints a table.
+No API keys are read or stored. No prompts, completions, or file contents leave your machine. Nothing is sent anywhere: the plugin reads local files and prints a table.
 
 ## Development
 
@@ -103,3 +99,13 @@ The pricing data under `scripts/vendor/ai-price-index/` is a bundled snapshot of
 ## License
 
 MIT for the tooling. The bundled pricing data is CC BY 4.0 (attribution: RoninForge). See [LICENSE](LICENSE).
+
+## Docs
+
+- [What it does, how it works and the FAQ](https://roninforge.org/claude-code-cost/)
+- [How to see ongoing project costs](https://roninforge.org/tutorials/how-to-see-ongoing-project-costs/)
+- [How to minimize Claude Code costs](https://roninforge.org/tutorials/how-to-minimize-claude-code-costs/)
+- [budgetclaw, for hard spend caps and phone alerts](https://roninforge.org/budgetclaw/)
+- [Why a price change should not restate your recorded history](https://roninforge.org/data/ai-price-index/back-dating/)
+
+claude-code-cost is part of [RoninForge.org](https://roninforge.org).
