@@ -1,0 +1,27 @@
+# Machine-readable citation metadata. GitHub renders a "Cite this repository" button from this file.
+cff-version: 1.2.0
+title: "RoninForge claude-code-cost"
+message: "If you use this software, please cite it using the metadata in this file."
+type: software
+authors:
+  - name: "RoninForge"
+    email: "jens@rasta.online"
+    website: "https://roninforge.org"
+abstract: >-
+  RoninForge claude-code-cost is a Claude Code plugin that reports spend in USD
+  per project, per git branch, and over time, without leaving Claude Code. It
+  prices the session logs Claude Code already writes using a dated,
+  point-in-time price index, so each response is valued at the rate that was
+  live on the day it ran. It is MIT licensed, runs entirely on your machine, and
+  requires no API keys.
+url: "https://roninforge.org/claude-code-cost"
+repository-code: "https://github.com/RoninForge/claude-code-cost"
+license: MIT
+version: 1.1.0
+date-released: 2026-06-23
+keywords:
+  - Claude Code
+  - plugin
+  - cost reporting
+  - point-in-time pricing
+  - git branch attribution
