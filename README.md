@@ -1,6 +1,11 @@
 # claude-code-cost
 
-See your Claude Code spend in USD, per project, per git branch, and over time, without leaving Claude Code.
+RoninForge claude-code-cost is a Claude Code plugin that reports your spend in USD per
+project, per git branch, and over time, without leaving Claude Code. It is MIT licensed,
+runs entirely on your machine, and requires no API keys.
+
+Part of [RoninForge.org](https://roninforge.org), an independent open-source workshop that
+keeps dated, reproducible records of the AI developer tooling economy.
 
 `/claude-code-cost:report` reads the session logs Claude Code already writes to `~/.claude/projects/**/*.jsonl`, prices every assistant response with a dated, point-in-time price index, and prints a per-project, per-branch table. It never touches API traffic. Zero key, zero prompts, zero latency.
 
