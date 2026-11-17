@@ -287,6 +287,7 @@ async function collectEvents(opts) {
   let malformed = 0;
   const unpricedModels = new Map(); // model -> count
   let unpricedCount = 0;
+  let tier2Count = 0; // responses billed at a prompt-length tier2 rate
 
   for (const file of walkJsonl(rootAbs)) {
     // eslint-disable-next-line no-await-in-loop
@@ -306,9 +307,11 @@ async function collectEvents(opts) {
       if (seen.has(dedupKey)) return;
       seen.add(dedupKey);
 
-      // Price at the event's UTC calendar date.
+      // Each deduped response is one request: price it at its UTC date, with the
+      // prompt-length tier applied (e.g. Haiku 5.5 prompts over 100k tokens).
       const date = new Date(ev.ts).toISOString().slice(0, 10);
-      const { cents, modelKnown } = price.usdForRollup(ev.tokens, "anthropic", ev.model, date);
+      const { cents, modelKnown, tier2 } = price.usdForRequest(ev.tokens, "anthropic", ev.model, date);
+      if (tier2) tier2Count++;
 
       if (!modelKnown) {
         unpricedCount++;
@@ -332,6 +335,7 @@ async function collectEvents(opts) {
     malformed,
     unpricedModels,
     unpricedCount,
+    tier2Count,
     dataModified: price.meta.dataModified,
   };
 }
@@ -645,6 +649,7 @@ function writeMeta(result) {
     unpricedCount: result.unpricedCount,
     unpricedModels: [...result.unpricedModels.keys()].sort(),
     malformedLines: result.malformed,
+    tier2Requests: result.tier2Count,
   };
   process.stderr.write("_meta " + JSON.stringify(meta) + "\n");
 }

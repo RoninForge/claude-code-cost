@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"g-1","requestId":"req_G","timestamp":"2026-10-15T10:00:00.000Z","cwd":"/home/dev/gamma","gitBranch":"main","message":{"id":"msg_G","model":"claude-haiku-5-5","usage":{"input_tokens":61000,"output_tokens":100000,"cache_read_input_tokens":30000,"cache_creation":{"ephemeral_5m_input_tokens":10000,"ephemeral_1h_input_tokens":0}}}}
