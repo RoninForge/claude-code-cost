@@ -99,7 +99,7 @@ claude plugin validate . --strict                 # validate the plugin manifest
 
 Each command in `commands/` is a thin wrapper that runs `scripts/cost.mjs` with a `--mode`. The reader makes a single pass over the JSONL (dedup + point-in-time pricing) and every mode aggregates from that one priced-event list.
 
-The pricing data under `scripts/vendor/ai-price-index/` is a bundled snapshot of the published `ai-price-index` package. To refresh it, re-copy `lib/{data.json,engine.js,index.js}` from a newer release and bump the plugin version. See `scripts/vendor/ai-price-index/VENDORED.md`.
+The pricing data under `scripts/vendor/ai-price-index/` is a bundled snapshot of `ai-price-index`'s built `lib/`. To refresh it, re-copy `lib/{data.json,engine.js,index.js}` and `index.d.ts` from a newer release and bump the plugin version. See `scripts/vendor/ai-price-index/VENDORED.md`.
 
 ## License
 

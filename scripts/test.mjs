@@ -246,6 +246,25 @@ check(
   badMode.stderr.trim()
 );
 
+// --- Prompt-length tier: claude-haiku-5-5 on 2026-10-15. Prompt = input +
+// cache_read + cache writes. gamma's prompt is 101,000 tokens (tier2, whole
+// request incl. output); delta's is exactly 100,000 (base). Expected dollars are
+// hand-computed from the published rates, not from the vendored lib. ---
+const TIER_FIXTURES = join(REPO, "test", "fixtures", "tier-projects");
+const tierRun = spawnSync(
+  process.execPath,
+  [COST, "--self", "--json", "--asof", "2026-10-15", "--projects-dir", TIER_FIXTURES],
+  { encoding: "utf8" }
+);
+eq("tier run exits 0", tierRun.status, 0);
+const tierRows = new Map(JSON.parse(tierRun.stdout || "[]").map((r) => [r.project, r]));
+// 61k*0.50 + 100k*2.50 + 30k*0.05 + 10k*0.625 per MTok = $0.28825
+eq("haiku-5-5 prompt 101k bills at tier2", tierRows.get("gamma")?.today, 0.29);
+// 60k*0.10 + 100k*0.50 + 30k*0.01 + 10k*0.125 per MTok = $0.05755
+eq("haiku-5-5 prompt exactly 100k stays base", tierRows.get("delta")?.today, 0.06);
+const tierMeta = (tierRun.stderr || "").split("\n").find((l) => l.startsWith("_meta "));
+eq("_meta counts one tier2 request", tierMeta && JSON.parse(tierMeta.slice(6)).tier2Requests, 1);
+
 console.log("");
 if (failures > 0) {
   console.error(`${failures} check(s) failed.`);

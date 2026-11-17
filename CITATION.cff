@@ -17,8 +17,8 @@ abstract: >-
 url: "https://roninforge.org/claude-code-cost"
 repository-code: "https://github.com/RoninForge/claude-code-cost"
 license: MIT
-version: 1.1.0
-date-released: 2026-06-23
+version: 1.1.1
+date-released: 2026-11-17
 keywords:
   - Claude Code
   - plugin

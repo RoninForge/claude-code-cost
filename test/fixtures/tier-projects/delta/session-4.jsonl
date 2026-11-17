@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"d-1","requestId":"req_H","timestamp":"2026-10-15T11:00:00.000Z","cwd":"/home/dev/delta","gitBranch":"main","message":{"id":"msg_H","model":"claude-haiku-5-5","usage":{"input_tokens":60000,"output_tokens":100000,"cache_read_input_tokens":30000,"cache_creation":{"ephemeral_5m_input_tokens":10000,"ephemeral_1h_input_tokens":0}}}}
